@@ -2,17 +2,24 @@ name: Build Windows EXE (RTSP4CamRecorder)
 on:
   workflow_dispatch:
   push:
-    tags: ["v*"]
+    paths:
+      - 'rtsp_4ch_recorder.py'      # ←実ファイル名に合わせて変更可
+      - 'requirements.txt'
+      - '.github/workflows/windows-build.yml'
 
 jobs:
-  win:
+  build:
     runs-on: windows-latest
+    env:
+      APP_PY: rtsp_4ch_recorder.py   # ←ここも実ファイル名に合わせる
+
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: '3.11'
+          cache: 'pip'
 
       - name: Install deps
         run: |
@@ -20,11 +27,16 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      # 省サイズ版：PATHのffmpegを使用（配布先でffmpeg要）
-      - name: Install ffmpeg to PATH (Chocolatey)
-        run: choco install ffmpeg -y
+      - name: Install ffmpeg and bundle into bin
+        shell: pwsh
+        run: |
+          choco install ffmpeg -y
+          $ff = Join-Path $env:ChocolateyInstall 'bin/ffmpeg.exe'
+          if (!(Test-Path $ff)) { throw "ffmpeg not found at $ff" }
+          New-Item -ItemType Directory -Force -Path bin | Out-Null
+          Copy-Item $ff bin\ffmpeg.exe -Force
 
-      - name: Build EXE
+      - name: Build EXE with PyInstaller
         run: |
           pyinstaller --noconfirm --clean ^
             --name RTSP4CamRecorder ^
@@ -32,7 +44,7 @@ jobs:
             --collect-all PySide6 ^
             --collect-all cv2 ^
             --add-data "bin;bin" ^
-            rtsp_4ch_recorder.py
+            "%APP_PY%"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
