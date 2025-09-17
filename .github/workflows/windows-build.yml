@@ -1,0 +1,41 @@
+name: Build Windows EXE (RTSP4CamRecorder)
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  win:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      # 省サイズ版：PATHのffmpegを使用（配布先でffmpeg要）
+      - name: Install ffmpeg to PATH (Chocolatey)
+        run: choco install ffmpeg -y
+
+      - name: Build EXE
+        run: |
+          pyinstaller --noconfirm --clean ^
+            --name RTSP4CamRecorder ^
+            --windowed ^
+            --collect-all PySide6 ^
+            --collect-all cv2 ^
+            --add-data "bin;bin" ^
+            rtsp_4ch_recorder.py
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RTSP4CamRecorder-win
+          path: dist/RTSP4CamRecorder/
