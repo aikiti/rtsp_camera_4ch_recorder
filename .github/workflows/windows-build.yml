@@ -1,22 +1,51 @@
 name: Build Windows EXE (RTSP4CamRecorder)
+
 on:
   workflow_dispatch:
   push:
     paths:
-      - 'rtsp_4ch_recorder.py'      # ←実ファイル名に合わせて変更可
+      - 'rtsp_4ch_recorder.py'
+      - 'rtsp_camera_4ch_recorder.py'
       - 'requirements.txt'
       - '.github/workflows/windows-build.yml'
 
 jobs:
   build:
     runs-on: windows-latest
-    env:
-      APP_PY: rtsp_4ch_recorder.py   # ←ここも実ファイル名に合わせる
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout (with LFS)
+        uses: actions/checkout@v4
+        with:
+          lfs: true
 
-      - uses: actions/setup-python@v5
+      - name: Detect app filename
+        shell: pwsh
+        run: |
+          $candidates = @(
+            "rtsp_4ch_recorder.py",
+            "rtsp_camera_4ch_recorder.py",
+            "app.py"
+          )
+          $found = $false
+          foreach ($f in $candidates) {
+            if (Test-Path $f) {
+              "APP_PY=$f" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+              Write-Host "Detected app: $f"
+              $found = $true
+              break
+            }
+          }
+          if (-not $found) { throw "Could not find app .py file in repo root. Put your script there or set APP_PY." }
+
+      - name: List key files (debug)
+        shell: pwsh
+        run: |
+          Write-Host "Repo root:" (Get-Location)
+          Get-ChildItem -Recurse -File -Include *.py,requirements.txt,bin\ffmpeg.exe | Format-Table -AutoSize
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
@@ -27,14 +56,13 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: Install ffmpeg and bundle into bin
+      - name: Ensure ffmpeg in repo (bin/ffmpeg.exe)
         shell: pwsh
         run: |
-          choco install ffmpeg -y
-          $ff = Join-Path $env:ChocolateyInstall 'bin/ffmpeg.exe'
-          if (!(Test-Path $ff)) { throw "ffmpeg not found at $ff" }
-          New-Item -ItemType Directory -Force -Path bin | Out-Null
-          Copy-Item $ff bin\ffmpeg.exe -Force
+          if (!(Test-Path "bin/ffmpeg.exe")) {
+            throw "bin/ffmpeg.exe is missing. Commit via Git LFS (git lfs track 'bin/*.exe')."
+          }
+          Write-Host "ffmpeg found."
 
       - name: Build EXE with PyInstaller
         run: |
